@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  san_bot:
+    build: .
+    container_name: san_bot_container
+    # Если нужно передать токен через переменные окружения
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
