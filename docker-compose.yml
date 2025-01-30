@@ -1,26 +1,24 @@
-version: '3.9'
+version: "3.9"
 
 services:
   san_bot:
     build:
       context: .
-      # Не указываем target: builder, чтобы Dockerfile собрался целиком
-      # (Если у вас во втором FROM есть 'AS final', можно прописать 'target: final')
+      # Не указываем target: builder, чтобы дошло до финального слоя.
+      # Или, если хотите явно, переименуйте final в `AS final` и пропишите target: final
 
     container_name: san_bot_container
 
-    # Передаём секреты и настройки в контейнер через .env-файл
+    # Переменные окружения берём из .env (Токен Телеграм, ключи, лог-уровень и т.д.)
     env_file:
       - .env
-
-    # Можно дополнительно продублировать важные переменные:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PYTHONUNBUFFERED=1
 
-    # Пробрасываем локальные папки в контейнер
+    # Пробрасываем локальные папки data и logs в контейнер
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -28,13 +26,13 @@ services:
     # Контейнер будет перезапускаться, если упадёт
     restart: unless-stopped
 
-    # Подключаем к сети (обязательно без internal: true, чтобы был доступ к Интернету)
+    # Настраиваем сеть для доступа к Telegram
     networks:
       - bot_network
 
-    # Healthcheck для проверки, что бот действительно работает
+    # Проверка, что бот запущен
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'python -u bot.py' || exit 1"]
+      test: ["CMD-SHELL", "pgrep -f 'python bot.py' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -42,4 +40,4 @@ services:
 networks:
   bot_network:
     driver: bridge
-    # internal: true  # НЕ устанавливайте, если нужен выход в Интернет/Telegram
+    # internal: true # Убираем, чтобы бот видел внешний интернет (Telegram servers)
