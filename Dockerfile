@@ -3,25 +3,24 @@ FROM python:3.11-slim-bookworm AS builder
 
 WORKDIR /app
 
-# Отключаем .pyc-файлы и буфер вывода Python
+# Отключаем создание .pyc и буфер вывода
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# Устанавливаем нужные системные зависимости (например, gcc, python3-dev — если нужно что-то компилировать)
+# Устанавливаем системные зависимости (если нужно что-то компилировать)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# 1) Создаём виртуальное окружение
-RUN python -m venv /app/venv
+# Создаём виртуальное окружение в /opt/venv
+RUN python -m venv /opt/venv
 
-# 2) Настраиваем окружение, чтобы при RUN командах в builder
-#    использовалась pip из venv
-ENV VIRTUAL_ENV=/app/venv
+# Активируем это окружение: в builder-слое pip указывает в /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# 3) Копируем requirements.txt и устанавливаем зависимости в /app/venv
+# Копируем список зависимостей и устанавливаем их в venv
 COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
@@ -31,34 +30,30 @@ FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# Копируем только виртуальное окружение из builder
-COPY --from=builder /app/venv /app/venv
+# Копируем виртуальное окружение из builder
+COPY --from=builder /opt/venv /opt/venv
 
-# Настраиваем ENV, чтобы при запуске контейнера использовался python/pip из venv
-ENV VIRTUAL_ENV=/app/venv
+# Активируем venv в финальном слое
+ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Копируем остальной код (bot.py, .env.example и пр.)
-COPY . .
-
-# Создаём директории для данных и логов
-RUN mkdir -p /app/data /app/logs
-
-# Создаём непривилегированного пользователя и группу
+# Создаём непривилегированного пользователя
 RUN groupadd -r appuser && \
     useradd -r -g appuser -d /app -s /usr/sbin/nologin appuser
 
-# Настраиваем права
-RUN chown -R appuser:appuser /app && \
-    chmod -R 750 /app && \
-    chmod -R 770 /app/logs && \
-    chmod -R 770 /app/data
+# Копируем весь проект
+COPY . .
 
-# Переключаемся на non-root пользователя
+# Создаём папки для данных и логов + даём права appuser
+RUN mkdir -p /app/data /app/logs && \
+    chown -R appuser:appuser /app && \
+    chmod -R 750 /app && \
+    chmod -R 770 /app/logs /app/data
+
+# Запускаем контейнер под пользователем appuser
 USER appuser
 
-# Корректная обработка SIGINT
 STOPSIGNAL SIGINT
 
-# Запускаем бота
-CMD ["python", "-u", "bot.py"]
+# Запуск бота
+CMD ["python", "bot.py"]
