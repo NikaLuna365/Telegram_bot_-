@@ -1,27 +1,59 @@
-# Используем Python 3.9 (можно обновить до 3.10+)
-FROM python:3.9-slim
+# Используем официальный Python образ с конкретной версией (LTS)
+FROM python:3.11-slim-bookworm AS builder
 
-# Устанавливаем рабочую директорию
+# Устанавливаем рабочий каталог
 WORKDIR /app
+
+# Настраиваем переменные окружения
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+ENV PIP_NO_CACHE_DIR 1
+
+# Устанавливаем системные зависимости
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Копируем и устанавливаем зависимости
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --user -r requirements.txt
 
-# Копируем оставшиеся файлы проекта
+# Финальный этап сборки
+FROM python:3.11-slim-bookworm
+
+WORKDIR /app
+
+# Копируем установленные зависимости из builder
+COPY --from=builder /root/.local /root/.local
+COPY --from=builder /app/requirements.txt .
+
+# Копируем исходный код
 COPY . .
 
-# Создаём папки для логов и данных, если их нет
+# Создаем необходимые директории
 RUN mkdir -p /app/data /app/logs
 
-# Создаём нового пользователя внутри контейнера
-RUN useradd -m appuser
+# Создаем непривилегированного пользователя и группу
+RUN groupadd -r appuser && \
+    useradd -r -g appuser -d /app -s /sbin/nologin appuser
 
-# Даем права пользователю `appuser` только на папку с логами
-RUN chown -R appuser:appuser /app/logs
+# Настраиваем права доступа
+RUN chown -R appuser:appuser /app && \
+    chmod -R 750 /app && \
+    chmod -R 770 /app/logs && \
+    chmod -R 770 /app/data
 
-# Запускаем контейнер под пользователем appuser
+# Переключаемся на непривилегированного пользователя
 USER appuser
 
-# Запускаем бота
-CMD ["python", "bot.py"]
+# Убедимся, что скрипты в ~/.local/bin доступны
+ENV PATH=/root/.local/bin:$PATH
+
+# Используем правильный обработчик сигналов
+STOPSIGNAL SIGINT
+
+# Запускаем приложение
+CMD ["python", "-u", "bot.py"]
