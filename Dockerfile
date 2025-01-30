@@ -3,17 +3,25 @@ FROM python:3.11-slim-bookworm AS builder
 
 WORKDIR /app
 
-# Отключаем создание .pyc и буфер вывода
+# Отключаем .pyc-файлы и буфер вывода Python
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# Устанавливаем необходимые системные пакеты
+# Устанавливаем нужные системные зависимости (например, gcc, python3-dev — если нужно что-то компилировать)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Копируем requirements.txt и устанавливаем зависимости ГЛОБАЛЬНО (без --user)
+# 1) Создаём виртуальное окружение
+RUN python -m venv /app/venv
+
+# 2) Настраиваем окружение, чтобы при RUN командах в builder
+#    использовалась pip из venv
+ENV VIRTUAL_ENV=/app/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# 3) Копируем requirements.txt и устанавливаем зависимости в /app/venv
 COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
@@ -23,20 +31,24 @@ FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# Копируем глобальные пакеты (в /usr/local/...) из builder
-COPY --from=builder /usr/local /usr/local
+# Копируем только виртуальное окружение из builder
+COPY --from=builder /app/venv /app/venv
 
-# Копируем всё остальное (код, конфиги, .env.example и т.п.)
+# Настраиваем ENV, чтобы при запуске контейнера использовался python/pip из venv
+ENV VIRTUAL_ENV=/app/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Копируем остальной код (bot.py, .env.example и пр.)
 COPY . .
 
 # Создаём директории для данных и логов
 RUN mkdir -p /app/data /app/logs
 
-# Создаём пользователя и группу без привилегий
+# Создаём непривилегированного пользователя и группу
 RUN groupadd -r appuser && \
     useradd -r -g appuser -d /app -s /usr/sbin/nologin appuser
 
-# Делаем пользователя владельцем /app с нужными правами
+# Настраиваем права
 RUN chown -R appuser:appuser /app && \
     chmod -R 750 /app && \
     chmod -R 770 /app/logs && \
@@ -45,6 +57,7 @@ RUN chown -R appuser:appuser /app && \
 # Переключаемся на non-root пользователя
 USER appuser
 
+# Корректная обработка SIGINT
 STOPSIGNAL SIGINT
 
 # Запускаем бота
