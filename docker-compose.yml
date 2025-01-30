@@ -1,13 +1,51 @@
-version: '3.8'
+version: '3.9'
 
 services:
   san_bot:
-    build: .
+    build:
+      context: .
+      target: builder  # Используем этап сборки из Dockerfile
     container_name: san_bot_container
-    # Если нужно передать токен через переменные окружения
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env  # Подключаем отдельный файл с секретами
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - persistent_data:/app/data
+      - persistent_logs:/app/logs
+      - ./cache:/root/.cache  # Для кэша зависимостей
     restart: unless-stopped
+    networks:
+      - bot_network
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python -u bot.py' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  persistent_data:
+    driver_opts:
+      type: none
+      device: ${PWD}/data
+      o: bind
+  persistent_logs:
+    driver_opts:
+      type: none
+      device: ${PWD}/logs
+      o: bind
+
+networks:
+  bot_network:
+    driver: bridge
+    internal: true  # Изолируем сеть
