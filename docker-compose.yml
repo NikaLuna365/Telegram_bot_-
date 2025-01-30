@@ -4,17 +4,19 @@ services:
   san_bot:
     build:
       context: .
-      target: builder  # Используем этап сборки из Dockerfile
+      # Не указываем "target", чтобы прошла полная сборка со второй (финальной) стадией
+      # Либо если назвали вторую стадию AS final, то:
+      # target: final
     container_name: san_bot_container
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - PYTHONUNBUFFERED=1
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      PYTHONUNBUFFERED: 1
     env_file:
-      - .env  # Подключаем отдельный файл с секретами
+      - .env
     volumes:
       - persistent_data:/app/data
       - persistent_logs:/app/logs
-      - ./cache:/root/.cache  # Для кэша зависимостей
+      - ./cache:/root/.cache
     restart: unless-stopped
     networks:
       - bot_network
@@ -48,4 +50,5 @@ volumes:
 networks:
   bot_network:
     driver: bridge
-    internal: true  # Изолируем сеть
+    # Если нужно, чтобы контейнер имел доступ в Интернет, убираем internal: true
+    # internal: false
