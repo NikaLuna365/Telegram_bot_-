@@ -1,54 +1,41 @@
-version: '3.9'
+version: "3.9"
 
 services:
   san_bot:
     build:
       context: .
-      # Не указываем "target", чтобы прошла полная сборка со второй (финальной) стадией
-      # Либо если назвали вторую стадию AS final, то:
-      # target: final
+      # Не указываем target: builder — иначе соберётся только промежуточный слой
     container_name: san_bot_container
-    environment:
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      PYTHONUNBUFFERED: 1
+
+    # Передаём переменные окружения из .env
     env_file:
       - .env
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PYTHONUNBUFFERED: 1
+
+    # Пробрасываем локальные папки data/ и logs/ в контейнер
     volumes:
-      - persistent_data:/app/data
-      - persistent_logs:/app/logs
-      - ./cache:/root/.cache
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+    # Контейнер будет перезапускаться, если упадёт
     restart: unless-stopped
+
+    # Сеть для бота (по желанию)
     networks:
       - bot_network
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
+
+    # Проверка, что бот жив
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f 'python -u bot.py' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
 
-volumes:
-  persistent_data:
-    driver_opts:
-      type: none
-      device: ${PWD}/data
-      o: bind
-  persistent_logs:
-    driver_opts:
-      type: none
-      device: ${PWD}/logs
-      o: bind
-
 networks:
   bot_network:
     driver: bridge
-    # Если нужно, чтобы контейнер имел доступ в Интернет, убираем internal: true
-    # internal: false
+    # internal: true  # НЕ устанавливаем, чтобы был доступ в интернет
