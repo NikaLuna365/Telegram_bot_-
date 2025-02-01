@@ -20,8 +20,8 @@ services:
 
     # Пробрасываем локальные папки data и logs в контейнер
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ./data:/app/data:rw,Z
+      - ./logs:/app/logs:rw,Z
 
     # Контейнер будет перезапускаться, если упадёт
     restart: unless-stopped
@@ -31,11 +31,11 @@ services:
       - bot_network
 
     # Проверка, что бот запущен
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'python bot.py' || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+#    healthcheck:
+#      test: ["CMD-SHELL", "pgrep -f 'python bot.py' || exit 1"]
+#      interval: 30s
+#      timeout: 5s
+#      retries: 3
 
 networks:
   bot_network:
