@@ -45,10 +45,9 @@ RUN groupadd -r appuser && \
 COPY . .
 
 # Создаём папки для данных и логов + даём права appuser
-RUN mkdir -p /app/data /app/logs && \
+RUN mkdir -p /app && \
     chown -R appuser:appuser /app && \
-    chmod -R 750 /app && \
-    chmod -R 770 /app/logs /app/data
+    chmod -R 750 /app
 
 # Запускаем контейнер под пользователем appuser
 USER appuser
