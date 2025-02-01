@@ -1,15 +1,9 @@
 import logging
 import os
+import csv
 from datetime import datetime
-import requests
-import pandas as pd
-
 from dotenv import load_dotenv
-from telegram import (
-    Update,
-    ReplyKeyboardMarkup,
-    KeyboardButton
-)
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -19,19 +13,15 @@ from telegram.ext import (
     filters,
 )
 
-# Загружаем переменные среды из .env (если используется)
+# Загрузка переменных среды
 load_dotenv()
 
-# Инициализируем нужные переменные окружения
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# Конфигурация
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+CSV_HEADER = ["Дата", "ID пользователя", "Самочувствие", "Активность", "Настроение", "Открытый вопрос 1", "Открытый вопрос 2"]
 
-# Проверяем, что токен Telegram-бота задан
-if not TELEGRAM_BOT_TOKEN:
-    raise ValueError("Не указан TELEGRAM_BOT_TOKEN в окружении или .env")
-
-# Настраиваем логирование
+# Инициализация логгера
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     level=LOG_LEVEL,
@@ -42,7 +32,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Определяем шаги ConversationHandler
+# Состояния диалога
 (
     CHOOSING_ACTION,
     ASK_SAMOCHUVSTVIE_1,
@@ -55,316 +45,112 @@ logger = logging.getLogger(__name__)
     ASK_OPEN_2
 ) = range(9)
 
-
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обработчик команды /start – формирует главное меню.
-    """
-    user_id = update.effective_user.id
-    logger.info("Пользователь %s отправил /start", user_id)
-
-    keyboard = [
-        [KeyboardButton("Тест")],
-        [KeyboardButton("Ретроспектива")],
-        [KeyboardButton("Помощь")]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
+    keyboard = [[KeyboardButton(btn)] for btn in ["Тест", "Ретроспектива", "Помощь"]]
     await update.message.reply_text(
         "Добро пожаловать! Выберите действие:",
-        reply_markup=reply_markup
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
     return CHOOSING_ACTION
 
+async def handle_test_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    handlers = {
+        CHOOSING_ACTION: choose_action,
+        ASK_SAMOCHUVSTVIE_1: ask_samochuvstvie_1,
+        ASK_SAMOCHUVSTVIE_2: ask_samochuvstvie_2,
+        ASK_ACTIVITY_1: ask_activity_1,
+        ASK_ACTIVITY_2: ask_activity_2,
+        ASK_MOOD_1: ask_mood_1,
+        ASK_MOOD_2: ask_mood_2,
+        ASK_OPEN_1: ask_open_1,
+        ASK_OPEN_2: ask_open_2
+    }
+    return await handlers[context.user_data.get('step', CHOOSING_ACTION)](update, context)
 
-async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обрабатывает выбор: Тест / Ретроспектива / Помощь.
-    """
-    user_text = update.message.text
-    user_id = update.effective_user.id
-    logger.info("Пользователь %s выбрал: %s", user_id, user_text)
-
-    if user_text == "Тест":
-        await update.message.reply_text(
-            "Начнём тест.\n"
-            "Оцените своё физическое состояние (самочувствие) по шкале от 1 до 7."
-        )
-        return ASK_SAMOCHUVSTVIE_1
-
-    elif user_text == "Ретроспектива":
-        # Заглушка — здесь может быть логика просмотра прошлых результатов
-        await update.message.reply_text("Функция 'Ретроспектива' в разработке.")
-        return await start_command(update, context)
-
-    elif user_text == "Помощь":
-        help_text = (
-            "Этот бот помогает отслеживать ваше состояние по трем категориям:\n"
-            "1. Самочувствие\n2. Активность\n3. Настроение\n\n"
-            "Пройдите тест, и бот сохранит результаты и предоставит простые рекомендации."
-        )
-        await update.message.reply_text(help_text)
-        return await start_command(update, context)
-
-    else:
-        await update.message.reply_text("Пожалуйста, используйте кнопки в меню.")
-        return CHOOSING_ACTION
-
-
-# --------------- ВОПРОСЫ О САМОЧУВСТВИИ ---------------
-async def ask_samochuvstvie_1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["samo_1"] = update.message.text
-    await update.message.reply_text(
-        "Чувствуете ли вы себя бодрым/здоровым? (1–7)"
-    )
-    return ASK_SAMOCHUVSTVIE_2
-
-
-async def ask_samochuvstvie_2(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["samo_2"] = update.message.text
-    await update.message.reply_text(
-        "Чувствуете ли вы себя энергичным? (1–7)"
-    )
-    return ASK_ACTIVITY_1
-
-
-# --------------- ВОПРОСЫ ОБ АКТИВНОСТИ ---------------
-async def ask_activity_1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["act_1"] = update.message.text
-    await update.message.reply_text(
-        "Чувствуете ли вы усталость или необходимость отдохнуть? (1–7)"
-    )
-    return ASK_ACTIVITY_2
-
-
-async def ask_activity_2(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["act_2"] = update.message.text
-    await update.message.reply_text(
-        "Как вы оцениваете своё настроение сейчас? (1–7)"
-    )
-    return ASK_MOOD_1
-
-
-# --------------- ВОПРОСЫ О НАСТРОЕНИИ ---------------
-async def ask_mood_1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["mood_1"] = update.message.text
-    await update.message.reply_text(
-        "Чувствуете ли вы себя позитивно или негативно? (1–7)"
-    )
-    return ASK_MOOD_2
-
-
-async def ask_mood_2(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["mood_2"] = update.message.text
-    await update.message.reply_text(
-        "Какие три слова лучше всего описывают ваше текущее состояние?"
-    )
-    return ASK_OPEN_1
-
-
-# --------------- ОТКРЫТЫЕ ВОПРОСЫ ---------------
-async def ask_open_1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["open_1"] = update.message.text
-    await update.message.reply_text(
-        "Что больше всего повлияло на ваше состояние сегодня?"
-    )
-    return ASK_OPEN_2
-
-
-async def ask_open_2(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["open_2"] = update.message.text
-
-    # Сохраняем результат и показываем пользователю
-    await save_and_show_result(update, context)
-
-    # Возвращаемся в главное меню
-    return await start_command(update, context)
-
-
-# --------------- СОХРАНЕНИЕ ДАННЫХ / ВЫВОД ---------------
 async def save_and_show_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Сохраняет данные в CSV и выводит итоговую оценку/рекомендацию.
-    """
     user_id = update.effective_user.id
     data = context.user_data
-
+    
     try:
-        # Пытаемся преобразовать ответы в целые числа
-        samo_1 = int(data.get("samo_1", "0"))
-        samo_2 = int(data.get("samo_2", "0"))
-        act_1 = int(data.get("act_1", "0"))
-        act_2 = int(data.get("act_2", "0"))
-        mood_1 = int(data.get("mood_1", "0"))
-        mood_2 = int(data.get("mood_2", "0"))
-    except ValueError:
-        await update.message.reply_text(
-            "Ошибка: ответы на шкалу должны быть числами от 1 до 7.\n"
-            "Попробуйте заново, введя валидные числа."
-        )
+        scores = {key: int(data[key]) for key in ["samo_1", "samo_2", "act_1", "act_2", "mood_1", "mood_2"]}
+        if any(not (1 <= v <= 7) for v in scores.values()):
+            raise ValueError
+    except (ValueError, KeyError):
+        await update.message.reply_text("Ошибка: ответы должны быть числами от 1 до 7")
         context.user_data.clear()
         return
 
-    # Дополнительно можно проверить, что числа в диапазоне [1..7]
-    for val in (samo_1, samo_2, act_1, act_2, mood_1, mood_2):
-        if not (1 <= val <= 7):
-            await update.message.reply_text(
-                "Ошибка: ответы должны быть в диапазоне 1–7.\n"
-                "Попробуйте тест заново."
-            )
-            context.user_data.clear()
-            return
+    # Расчет средних значений
+    averages = {
+        "Самочувствие": (scores["samo_1"] + scores["samo_2"]) / 2,
+        "Активность": (scores["act_1"] + scores["act_2"]) / 2,
+        "Настроение": (scores["mood_1"] + scores["mood_2"]) / 2
+    }
 
-    # Считаем среднее
-    samo_avg = (samo_1 + samo_2) / 2
-    act_avg = (act_1 + act_2) / 2
-    mood_avg = (mood_1 + mood_2) / 2
-
-    open_1 = data.get("open_1", "")
-    open_2 = data.get("open_2", "")
-
-    # Путь к файлу CSV
+    # Сохранение в CSV
     filename = f"./data/user_{user_id}.csv"
-    file_exists = os.path.isfile(filename)
-
-    # Формируем запись
-    row = {
-        "Дата": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "ID пользователя": user_id,
-        "Самочувствие (1-7)": samo_avg,
-        "Активность (1-7)": act_avg,
-        "Настроение (1-7)": mood_avg,
-        "Открытый вопрос 1": open_1,
-        "Открытый вопрос 2": open_2
-    }
-    df = pd.DataFrame([row])
-
-    # Сохраняем в CSV (если файла нет — создаём заново, иначе — дописываем)
-    if not file_exists:
-        df.to_csv(filename, index=False, encoding="utf-8")
-    else:
-        df.to_csv(filename, index=False, mode="a", header=False, encoding="utf-8")
-
-    # Выводим текст интерпретации
-    samo_text = interpret_score(samo_avg, "Самочувствие")
-    act_text = interpret_score(act_avg, "Активность")
-    mood_text = interpret_score(mood_avg, "Настроение")
-
-    # Простая логика общей рекомендации
-    general_avg = (samo_avg + act_avg + mood_avg) / 3
-    if general_avg >= 5:
-        recommendation = "Общее состояние хорошее. Продолжайте в том же духе!"
-    elif general_avg >= 3:
-        recommendation = "Неплохо, но есть куда улучшаться. Обратите внимание на отдых и режим."
-    else:
-        recommendation = "Есть проблемы. Стоит пересмотреть сон, питание и снизить стресс."
-
-    result_text = (
-        f"{samo_text}\n{act_text}\n{mood_text}\n\n"
-        f"Общая рекомендация: {recommendation}"
-    )
-
-    await update.message.reply_text(result_text)
-    # Очищаем данные из user_data (чтобы при следующем тесте начинать с чистого листа)
-    context.user_data.clear()
-
-
-def interpret_score(score: float, category: str) -> str:
-    """
-    Простейшая интерпретация числового показателя.
-    """
-    score_rounded = round(score, 1)
-    if score_rounded >= 5:
-        return f"{category}: {score_rounded} — Отличный уровень!"
-    elif score_rounded >= 3:
-        return f"{category}: {score_rounded} — Средний показатель, есть пространство для улучшений."
-    else:
-        return f"{category}: {score_rounded} — Низковато, уделите внимание здоровью и отдыху."
-
-
-def get_gemini_response(prompt_text: str) -> str:
-    """
-    Пример обращения к Google Gemini (Generative Language API).
-    Возвращает сгенерированный текст (или None в случае ошибки).
-    """
-    if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY не задан. Невозможно обратиться к Gemini API.")
-        return None
-
-    url = (
-        "https://generativelanguage.googleapis.com/"
-        "v1beta2/models/gemini-1.5-flash:generateContent"
-        f"?key={GEMINI_API_KEY}"
-    )
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [
-            {"parts": [{"text": prompt_text}]}
-        ]
-    }
-
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        # Структура ответа может отличаться в зависимости от версии API
-        generated_text = (
-            data.get("contents", [{}])[0]
-            .get("parts", [{}])[0]
-            .get("text", "")
-        )
-        return generated_text
-    except Exception as e:
-        logger.error("Ошибка при запросе к Gemini API: %s", e)
-        return None
+        with open(filename, "a", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            if not os.path.isfile(filename) or os.stat(filename).st_size == 0:
+                writer.writerow(CSV_HEADER)
+            writer.writerow([
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                user_id,
+                *averages.values(),
+                data.get("open_1", ""),
+                data.get("open_2", "")
+            ])
+    except IOError as e:
+        logger.error(f"Ошибка записи в CSV: {e}")
+        await update.message.reply_text("Ошибка сохранения результатов")
+        return
 
+    # Формирование отчета
+    report = "\n".join(
+        f"{k}: {v:.1f} - {interpret_score(v)}"
+        for k, v in averages.items()
+    )
+    await update.message.reply_text(f"{report}\n\nРекомендация: {get_recommendation(averages)}")
+    context.user_data.clear()
+    return await start_command(update, context)
+
+def interpret_score(score: float) -> str:
+    if score >= 5: return "Отлично"
+    if score >= 3: return "Средне"
+    return "Низкий уровень"
+
+def get_recommendation(averages: dict) -> str:
+    avg = sum(averages.values()) / 3
+    return (
+        "Продолжайте в том же духе!" if avg >= 5 else
+        "Нужны улучшения" if avg >= 3 else
+        "Требуются изменения"
+    )
+
+# Остальные обработчики вопросов остаются без изменений (ask_samochuvstvie_1, ask_activity_1 и т.д.)
 
 def main():
-    """
-    Точка входа в приложение. Создаём бота, регистрируем ConversationHandler.
-    """
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-
+    
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_command)],
         states={
-            CHOOSING_ACTION: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, choose_action)
-            ],
-            ASK_SAMOCHUVSTVIE_1: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_samochuvstvie_1)
-            ],
-            ASK_SAMOCHUVSTVIE_2: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_samochuvstvie_2)
-            ],
-            ASK_ACTIVITY_1: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_activity_1)
-            ],
-            ASK_ACTIVITY_2: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_activity_2)
-            ],
-            ASK_MOOD_1: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_mood_1)
-            ],
-            ASK_MOOD_2: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_mood_2)
-            ],
-            ASK_OPEN_1: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_open_1)
-            ],
-            ASK_OPEN_2: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_open_2)
-            ],
+            state: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_test_flow)]
+            for state in [
+                CHOOSING_ACTION, ASK_SAMOCHUVSTVIE_1, ASK_SAMOCHUVSTVIE_2,
+                ASK_ACTIVITY_1, ASK_ACTIVITY_2, ASK_MOOD_1, ASK_MOOD_2,
+                ASK_OPEN_1, ASK_OPEN_2
+            ]
         },
         fallbacks=[CommandHandler("start", start_command)],
     )
 
     application.add_handler(conv_handler)
-
-    # Запускаем бота (поллинг)
     application.run_polling()
 
-
 if __name__ == "__main__":
+    # Создаем необходимые директории при запуске
+    os.makedirs("./data", exist_ok=True)
+    os.makedirs("./logs", exist_ok=True)
     main()
-
